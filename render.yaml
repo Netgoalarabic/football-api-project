@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: netgoal-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    branch: main
+    region: frankfurt

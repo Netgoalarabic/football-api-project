@@ -6,6 +6,7 @@ import express from 'express';
 import axios from 'axios';
 import NodeCache from 'node-cache';
 import cors from 'cors';
+import Parser from 'rss-parser';
 
 const app = express();
 app.use(cors());
@@ -13,12 +14,14 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const API_KEY = process.env.API_KEY;
+const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const BASE_URL = 'https://v3.football.api-sports.io';
 const PORT = process.env.PORT || 3001;
 
 const cache = new NodeCache({ stdTTL: 43200 });
+const parser = new Parser();
 
-// ✅ دالة موحدة للكاش والـ API
+// دالة موحدة للكاش والـ API
 const fetchFromApi = async (url, cacheKey, res, customError = 'فشل جلب البيانات') => {
   try {
     if (cache.has(cacheKey)) return res.json(cache.get(cacheKey));
@@ -31,11 +34,11 @@ const fetchFromApi = async (url, cacheKey, res, customError = 'فشل جلب ا�
   }
 };
 
-// ✅ صفحة فحص السيرفر
+// صفحة فحص السيرفر
 app.get('/', (req, res) => res.send('✅ Net Goal Arabic Server شغال!'));
 
 /* ============================================================
-   🏆 المسارات الموسعة
+   🏆 مسارات API-Football
 ============================================================ */
 
 // 1️⃣ المسارات العامة
@@ -84,7 +87,7 @@ app.get('/api/fixtures/:id', async (req, res) => {
   await fetchFromApi(url, `fixture-${id}`, res, 'فشل جلب تفاصيل المباراة');
 });
 
-// 🟢 H2H + أحداث + تشكيلات + إحصائيات المباراة + إصابات
+// H2H + أحداث + تشكيلات + إحصائيات المباراة + إصابات
 app.get('/api/h2h', async (req, res) => {
   const { h2h } = req.query;
   if (!h2h) return res.status(400).json({ error: 'حدد h2h=homeID-awayID' });
@@ -194,6 +197,45 @@ app.get('/api/*', async (req, res) => {
   const query = req.originalUrl.split('?')[1] || '';
   const fullUrl = `${BASE_URL}/${pathAfterApi}?${query}`;
   await fetchFromApi(fullUrl, `${pathAfterApi}-${query}`, res, 'فشل جلب البيانات العامة');
+});
+
+/* ============================================================
+   📰 مسار جلب الأخبار NewsAPI + RSS fallback
+============================================================ */
+app.get('/api/news', async (req, res) => {
+  if (!NEWS_API_KEY) return res.status(500).json({ error: 'NEWS_API_KEY غير معرف في .env' });
+
+  const keyword = req.query.q || "football";
+  const lang = req.query.lang || "en";
+
+  const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(keyword)}&domains=goal.com,espn.com,skysports.com&language=${lang}&apiKey=${NEWS_API_KEY}`;
+
+  try {
+    const newsResponse = await axios.get(newsUrl);
+    const articles = newsResponse.data.articles || [];
+
+    if (articles.length > 0) {
+      return res.json(articles);
+    }
+  } catch (e) {
+    console.error('NewsAPI error:', e.message);
+  }
+
+  // fallback: RSS Goal.com
+  try {
+    const feed = await parser.parseURL('https://www.goal.com/feeds/en/news');
+    const rssArticles = feed.items.slice(0, 10).map(item => ({
+      title: item.title,
+      description: item.contentSnippet,
+      url: item.link,
+      urlToImage: "https://via.placeholder.com/600x300?text=Goal+RSS",
+      publishedAt: item.isoDate
+    }));
+    return res.json(rssArticles);
+  } catch (err) {
+    console.error('RSS error:', err.message);
+    return res.status(500).json({ error: 'فشل جلب الأخبار' });
+  }
 });
 
 /* ============================================================

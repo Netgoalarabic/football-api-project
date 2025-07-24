@@ -18,41 +18,43 @@ const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const BASE_URL = 'https://v3.football.api-sports.io';
 const PORT = process.env.PORT || 3001;
 
-const cache = new NodeCache({ stdTTL: 43200 });
+const cache = new NodeCache({ stdTTL: 43200 }); // 12 ساعة كاش
 const parser = new Parser();
 
-// دالة موحدة للكاش والـ API
+// دالة لجلب البيانات مع الكاش من API-Football
 const fetchFromApi = async (url, cacheKey, res, customError = 'فشل جلب البيانات') => {
   try {
     if (cache.has(cacheKey)) return res.json(cache.get(cacheKey));
-    const response = await axios.get(url, { headers: { 'x-apisports-key': API_KEY } });
+    const response = await axios.get(url, {
+      headers: { 'x-apisports-key': API_KEY },
+      timeout: 10000,
+    });
     cache.set(cacheKey, response.data);
-    res.json(response.data);
+    return res.json(response.data);
   } catch (error) {
     console.error('❌ API Error:', error.message);
-    res.status(500).json({ error: customError });
+    return res.status(500).json({ error: customError });
   }
 };
 
 // صفحة فحص السيرفر
 app.get('/', (req, res) => res.send('✅ Net Goal Arabic Server شغال!'));
 
-/* ============================================================
-   🏆 مسارات API-Football
-============================================================ */
+/* === مسارات API-Football === */
 
-// 1️⃣ المسارات العامة
+// 1. المواسم
 app.get('/api/seasons', async (req, res) => {
   const url = `${BASE_URL}/leagues/seasons`;
   await fetchFromApi(url, 'seasons', res, 'فشل جلب المواسم');
 });
 
+// 2. الدول
 app.get('/api/countries', async (req, res) => {
   const url = `${BASE_URL}/countries`;
   await fetchFromApi(url, 'countries', res, 'فشل جلب الدول');
 });
 
-// 2️⃣ الدوريات والبطولات
+// 3. البطولات
 app.get('/api/leagues', async (req, res) => {
   const url = `${BASE_URL}/leagues`;
   await fetchFromApi(url, 'leagues', res, 'فشل جلب البطولات');
@@ -63,7 +65,7 @@ app.get('/api/leagues/active', async (req, res) => {
   await fetchFromApi(url, 'leagues-active', res, 'فشل جلب البطولات الحالية');
 });
 
-// 3️⃣ المباريات (Fixtures)
+// 4. المباريات
 app.get('/api/fixtures/today', async (req, res) => {
   const today = moment().tz('Africa/Casablanca').format('YYYY-MM-DD');
   const url = `${BASE_URL}/fixtures?date=${today}`;
@@ -87,7 +89,6 @@ app.get('/api/fixtures/:id', async (req, res) => {
   await fetchFromApi(url, `fixture-${id}`, res, 'فشل جلب تفاصيل المباراة');
 });
 
-// H2H + أحداث + تشكيلات + إحصائيات المباراة + إصابات
 app.get('/api/h2h', async (req, res) => {
   const { h2h } = req.query;
   if (!h2h) return res.status(400).json({ error: 'حدد h2h=homeID-awayID' });
@@ -116,7 +117,7 @@ app.get('/api/injuries', async (req, res) => {
   await fetchFromApi(url, `injuries-${league}-${season}`, res, 'فشل جلب الإصابات');
 });
 
-// 4️⃣ الفرق Teams
+// 5. الفرق
 app.get('/api/teams/by-league', async (req, res) => {
   const { league, season } = req.query;
   const url = `${BASE_URL}/teams?league=${league}&season=${season}`;
@@ -153,7 +154,7 @@ app.get('/api/sidelined', async (req, res) => {
   await fetchFromApi(url, `sidelined-${player}`, res, 'فشل جلب قائمة الغيابات');
 });
 
-// 5️⃣ اللاعبين Players
+// 6. اللاعبين
 app.get('/api/players/by-team', async (req, res) => {
   const { team, season } = req.query;
   const url = `${BASE_URL}/players?team=${team}&season=${season}`;
@@ -171,7 +172,7 @@ app.get('/api/players/statistics', async (req, res) => {
   await fetchFromApi(url, `player-stats-${player}-${season}-${league}`, res, 'فشل جلب إحصائيات اللاعب');
 });
 
-// 6️⃣ الملاعب Venues + الهدافين
+// 7. الملاعب + الهدافين
 app.get('/api/venues', async (req, res) => {
   const { id } = req.query;
   const url = id ? `${BASE_URL}/venues?id=${id}` : `${BASE_URL}/venues`;
@@ -184,14 +185,14 @@ app.get('/api/topscorers', async (req, res) => {
   await fetchFromApi(url, `topscorers-${league}-${season}`, res, 'فشل جلب الهدافين');
 });
 
-// 7️⃣ الترتيب Standings
+// 8. الترتيب
 app.get('/api/standings', async (req, res) => {
   const { league, season } = req.query;
   const url = `${BASE_URL}/standings?league=${league}&season=${season}`;
   await fetchFromApi(url, `standings-${league}-${season}`, res, 'فشل جلب الترتيب');
 });
 
-// 8️⃣ روت عام لأي Endpoint
+// 9. روت عام لأي Endpoint (احتياطي)
 app.get('/api/*', async (req, res) => {
   const pathAfterApi = req.path.replace(/^\/api\//, '');
   const query = req.originalUrl.split('?')[1] || '';
@@ -199,26 +200,26 @@ app.get('/api/*', async (req, res) => {
   await fetchFromApi(fullUrl, `${pathAfterApi}-${query}`, res, 'فشل جلب البيانات العامة');
 });
 
-/* ============================================================
-   📰 مسار جلب الأخبار NewsAPI + RSS fallback
-============================================================ */
+/* === مسار الأخبار NewsAPI + RSS fallback === */
 app.get('/api/news', async (req, res) => {
-  if (!NEWS_API_KEY) return res.status(500).json({ error: 'NEWS_API_KEY غير معرف في .env' });
+  if (!NEWS_API_KEY) {
+    return res.status(500).json({ error: 'NEWS_API_KEY غير معرف في .env' });
+  }
 
-  const keyword = req.query.q || "football";
-  const lang = req.query.lang || "en";
+  const keyword = req.query.q || 'football';
+  const lang = req.query.lang || 'en';
 
   const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(keyword)}&domains=goal.com,espn.com,skysports.com&language=${lang}&apiKey=${NEWS_API_KEY}`;
 
   try {
-    const newsResponse = await axios.get(newsUrl);
+    const newsResponse = await axios.get(newsUrl, { timeout: 10000 });
     const articles = newsResponse.data.articles || [];
 
     if (articles.length > 0) {
       return res.json(articles);
     }
-  } catch (e) {
-    console.error('NewsAPI error:', e.message);
+  } catch (error) {
+    console.error('NewsAPI error:', error.message);
   }
 
   // fallback: RSS Goal.com
@@ -226,19 +227,19 @@ app.get('/api/news', async (req, res) => {
     const feed = await parser.parseURL('https://www.goal.com/feeds/en/news');
     const rssArticles = feed.items.slice(0, 10).map(item => ({
       title: item.title,
-      description: item.contentSnippet,
+      description: item.contentSnippet || '',
       url: item.link,
-      urlToImage: "https://via.placeholder.com/600x300?text=Goal+RSS",
+      urlToImage: 'https://via.placeholder.com/600x300?text=Goal+RSS',
       publishedAt: item.isoDate
     }));
     return res.json(rssArticles);
-  } catch (err) {
-    console.error('RSS error:', err.message);
+  } catch (error) {
+    console.error('RSS error:', error.message);
     return res.status(500).json({ error: 'فشل جلب الأخبار' });
   }
 });
 
-/* ============================================================
-   🚀 بدء الخادم
-============================================================ */
-app.listen(PORT, () => console.log(`🚀 Net Goal Arabic Full Server يعمل على http://localhost:${PORT}`));
+/* === بدء الخادم === */
+app.listen(PORT, () => {
+  console.log(`🚀 Net Goal Arabic Full Server يعمل على http://localhost:${PORT}`);
+});

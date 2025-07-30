@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+8import dotenv from 'dotenv';
 dotenv.config();
 
 import moment from 'moment-timezone';
@@ -116,6 +116,12 @@ app.get('/api/injuries', async (req, res) => {
   const url = `${BASE_URL}/injuries?league=${league}&season=${season}`;
   await fetchFromApi(url, `injuries-${league}-${season}`, res, 'فشل جلب الإصابات');
 });
+
+app.get('/api/fixtures/:id/predictions', async (req, res) => {
+  const url = `${BASE_URL}/predictions?fixture=${req.params.id}`;
+  await fetchFromApi(url, `predictions-${req.params.id}`, res, 'فشل جلب توقعات المباراة');
+});
+
 
 // 5. الفرق
 app.get('/api/teams/by-league', async (req, res) => {

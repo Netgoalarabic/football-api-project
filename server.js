@@ -6,12 +6,25 @@ import express from 'express';
 import axios from 'axios';
 import NodeCache from 'node-cache';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import Parser from 'rss-parser';
 
 const app = express();
-app.use(cors());
+
+// 🛡️ إعدادات الحماية
+app.use(helmet());
+app.use(cors({ origin: '*' })); // ممكن تخصيص الدومين هنا
 app.use(express.json());
 app.use(express.static('public'));
+
+// 🛡️ تحديد معدل الطلبات (كل IP: 100 طلب في الساعة)
+const limiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 ساعة
+  max: 100,
+  message: '❌ تم تجاوز عدد الطلبات المسموح بها. حاول لاحقًا.',
+});
+app.use(limiter); // مهم: تفعيل limiter قبل تعريف المسارات
 
 const API_KEY = process.env.API_KEY;
 const BASE_URL = 'https://v3.football.api-sports.io';
@@ -139,6 +152,7 @@ app.get('/api/fixtures/:id/predictions', async (req, res) => {
   const url = `${BASE_URL}/predictions?fixture=${req.params.id}`;
   await fetchFromApi(url, `predictions-${req.params.id}`, res, 'فشل جلب توقعات المباراة');
 });
+
 // 5. الفرق
 app.get('/api/teams/by-league', async (req, res) => {
   const { league, season } = req.query;
@@ -214,61 +228,6 @@ app.get('/api/standings', async (req, res) => {
   await fetchFromApi(url, `standings-${league}-${season}`, res, 'فشل جلب الترتيب');
 });
 
-app.get('/api/predictions/today', async (req, res) => {
-  const today = moment().tz('Africa/Casablanca').format('YYYY-MM-DD');
-  const cacheKey = `predictions-today-${today}`;
-
-  try {
-    // ✅ تحقق من الكاش أولًا
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      console.log('[CACHE] ✅ توقعات اليوم من الكاش');
-      return res.json(cached);
-    }
-
-    // ❌ لا يوجد كاش → جلب المباريات أولاً
-    const fixturesRes = await axios.get(`${BASE_URL}/fixtures`, {
-      headers: { 'x-apisports-key': API_KEY },
-      params: { date: today },
-    });
-
-    const fixtures = fixturesRes.data.response.slice(0, 10); // أول 10 مباريات فقط
-    const predictions = [];
-
-    for (const fixture of fixtures) {
-      const fixtureId = fixture.fixture.id;
-      const predCacheKey = `prediction-${fixtureId}`;
-
-      // تحقق من كاش كل توقع فردي
-      let prediction = cache.get(predCacheKey);
-
-      if (!prediction) {
-        const predRes = await axios.get(`${BASE_URL}/predictions`, {
-          headers: { 'x-apisports-key': API_KEY },
-          params: { fixture: fixtureId },
-        });
-
-        if (predRes.data.response.length > 0) {
-          prediction = predRes.data.response[0];
-          cache.set(predCacheKey, prediction); // كاش للتوقع الفردي
-        }
-      }
-
-      if (prediction) {
-        predictions.push(prediction);
-      }
-    }
-
-    // تخزين توقعات اليوم بالكامل
-    cache.set(cacheKey, predictions);
-    console.log('[CACHE] ✅ تم تخزين توقعات اليوم');
-    res.json(predictions);
-  } catch (err) {
-    console.error('❌ Error getting predictions for today:', err.message);
-    res.status(500).json({ error: 'فشل جلب توقعات اليوم' });
-  }
-});
-
 // 9. روت عام لأي Endpoint (احتياطي)
 app.get('/api/*', async (req, res) => {
   const pathAfterApi = req.path.replace(/^\/api\//, '');
@@ -277,8 +236,13 @@ app.get('/api/*', async (req, res) => {
   await fetchFromApi(fullUrl, `${pathAfterApi}-${query}`, res, 'فشل جلب البيانات العامة');
 });
 
+// ⚠️ التعامل مع أي خطأ غير متوقع
+app.use((err, req, res, next) => {
+  console.error('❌ Unhandled Error:', err);
+  res.status(500).json({ error: 'حدث خطأ داخلي في الخادم' });
+});
 
-/* === بدء الخادم === */
+// 🚀 تشغيل السيرفر
 app.listen(PORT, () => {
-  console.log(`🚀 Net Goal Arabic Full Server يعمل على http://localhost:${PORT}`);
+  console.log(`🚀 Server جاهز على http://localhost:${PORT}`);
 });

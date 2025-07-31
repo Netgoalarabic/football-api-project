@@ -82,6 +82,25 @@ app.get('/api/fixtures/live', async (req, res) => {
   await fetchFromApi(url, 'fixtures-live', res, 'فشل جلب المباريات المباشرة');
 });
 
+// مباريات سابقة
+app.get('/api/fixtures/previous', async (req, res) => {
+  const url = `${BASE_URL}/fixtures?last=20`;
+  await fetchFromApi(url, 'fixtures-previous', res, 'فشل جلب المباريات السابقة');
+});
+
+// مباريات قادمة
+app.get('/api/fixtures/next', async (req, res) => {
+  const url = `${BASE_URL}/fixtures?next=20`;
+  await fetchFromApi(url, 'fixtures-next', res, 'فشل جلب المباريات القادمة');
+});
+
+// مباريات بتاريخ مخصص
+app.get('/api/fixtures/date/:date', async (req, res) => {
+  const { date } = req.params;
+  const url = `${BASE_URL}/fixtures?date=${date}`;
+  await fetchFromApi(url, `fixtures-date-${date}`, res, 'فشل جلب المباريات بتاريخ مخصص');
+});
+
 app.get('/api/fixtures/:id', async (req, res) => {
   const { id } = req.params;
   const url = `${BASE_URL}/fixtures?id=${id}`;

@@ -214,6 +214,19 @@ app.get('/api/standings', async (req, res) => {
   await fetchFromApi(url, `standings-${league}-${season}`, res, 'فشل جلب الترتيب');
 });
 
+app.get("/api/predictions/:id", async (req, res) => {
+  const fixtureId = req.params.id;
+  try {
+    const response = await axios.get(`https://v3.football.api-sports.io/predictions?fixture=${fixtureId}`, {
+      headers: { "x-apisports-key": process.env.API_KEY }
+    });
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: "فشل في جلب التوقعات" });
+  }
+});
+
+
 // 9. روت عام لأي Endpoint (احتياطي)
 app.get('/api/*', async (req, res) => {
   const pathAfterApi = req.path.replace(/^\/api\//, '');

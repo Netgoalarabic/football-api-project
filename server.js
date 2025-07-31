@@ -214,18 +214,60 @@ app.get('/api/standings', async (req, res) => {
   await fetchFromApi(url, `standings-${league}-${season}`, res, 'فشل جلب الترتيب');
 });
 
-app.get("/api/predictions/:id", async (req, res) => {
-  const fixtureId = req.params.id;
+app.get('/api/predictions/today', async (req, res) => {
+  const today = moment().tz('Africa/Casablanca').format('YYYY-MM-DD');
+  const cacheKey = `predictions-today-${today}`;
+
   try {
-    const response = await axios.get(`https://v3.football.api-sports.io/predictions?fixture=${fixtureId}`, {
-      headers: { "x-apisports-key": process.env.API_KEY }
+    // ✅ تحقق من الكاش أولًا
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      console.log('[CACHE] ✅ توقعات اليوم من الكاش');
+      return res.json(cached);
+    }
+
+    // ❌ لا يوجد كاش → جلب المباريات أولاً
+    const fixturesRes = await axios.get(`${BASE_URL}/fixtures`, {
+      headers: { 'x-apisports-key': API_KEY },
+      params: { date: today },
     });
-    res.json(response.data);
+
+    const fixtures = fixturesRes.data.response.slice(0, 10); // أول 10 مباريات فقط
+    const predictions = [];
+
+    for (const fixture of fixtures) {
+      const fixtureId = fixture.fixture.id;
+      const predCacheKey = `prediction-${fixtureId}`;
+
+      // تحقق من كاش كل توقع فردي
+      let prediction = cache.get(predCacheKey);
+
+      if (!prediction) {
+        const predRes = await axios.get(`${BASE_URL}/predictions`, {
+          headers: { 'x-apisports-key': API_KEY },
+          params: { fixture: fixtureId },
+        });
+
+        if (predRes.data.response.length > 0) {
+          prediction = predRes.data.response[0];
+          cache.set(predCacheKey, prediction); // كاش للتوقع الفردي
+        }
+      }
+
+      if (prediction) {
+        predictions.push(prediction);
+      }
+    }
+
+    // تخزين توقعات اليوم بالكامل
+    cache.set(cacheKey, predictions);
+    console.log('[CACHE] ✅ تم تخزين توقعات اليوم');
+    res.json(predictions);
   } catch (err) {
-    res.status(500).json({ error: "فشل في جلب التوقعات" });
+    console.error('❌ Error getting predictions for today:', err.message);
+    res.status(500).json({ error: 'فشل جلب توقعات اليوم' });
   }
 });
-
 
 // 9. روت عام لأي Endpoint (احتياطي)
 app.get('/api/*', async (req, res) => {
